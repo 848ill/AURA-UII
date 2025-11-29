@@ -57,7 +57,8 @@ export async function POST(request: NextRequest) {
       console.error("Supabase storage upload error:", uploadError)
       
       // Provide helpful error message
-      if (uploadError.message?.includes("Bucket not found") || uploadError.statusCode === "404") {
+      const errorMessage = uploadError.message || String(uploadError)
+      if (errorMessage.includes("Bucket not found") || errorMessage.includes("404") || errorMessage.includes("not found")) {
         return NextResponse.json(
           { 
             error: "Storage bucket 'chat-files' tidak ditemukan. Silakan buat bucket di Supabase Dashboard → Storage.",
