@@ -368,7 +368,8 @@ function ChatInterface({
 
     // Don't add file references to message content - files are shown as preview
     // Only include text message content
-    const messageContent = trimmed
+    // If only files are sent without text, use empty string (allowed by API)
+    const messageContent = trimmed || ""
 
     // Save message first to get message_id
     const storedUserMessage = await persistMessage({

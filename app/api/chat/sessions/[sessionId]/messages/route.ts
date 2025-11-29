@@ -58,17 +58,14 @@ export async function POST(request: Request, { params }: RouteParams) {
       )
     }
 
-    if (!content || !content.trim()) {
-      return NextResponse.json(
-        { error: "Message content is required" },
-        { status: 400 }
-      )
-    }
+    // Allow empty content for messages with file attachments
+    // Content can be empty if user only sends files without text
+    const messageContent = content?.trim() || ""
 
     const message = await insertChatMessage({
       sessionId: params.sessionId,
       role,
-      content,
+      content: messageContent,
     })
 
     if (!message) {
