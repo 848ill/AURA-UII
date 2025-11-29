@@ -75,6 +75,7 @@ function ChatInterface({
   const [isSessionListOpen, setIsSessionListOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const recentlyPersistedMessages = useRef<Set<string>>(new Set())
   const { trigger, isLoading } = useN8nTrigger()
   const { user } = useAuth()
 
@@ -388,8 +389,29 @@ function ChatInterface({
       content: messageContent,
     })
 
+    // Add message optimistically - real-time will update if needed
+    // Track this message ID to prevent duplicate from real-time
     if (storedUserMessage) {
-      setMessages((prev) => [...prev, { ...storedUserMessage, files: uploadedFiles }])
+      recentlyPersistedMessages.current.add(storedUserMessage.id)
+      // Clear tracking after 3 seconds (real-time should arrive by then)
+      setTimeout(() => {
+        recentlyPersistedMessages.current.delete(storedUserMessage.id)
+      }, 3000)
+      
+      setMessages((prev) => {
+        // Check if message already exists (from real-time or duplicate)
+        const exists = prev.some((msg) => msg.id === storedUserMessage.id)
+        if (exists) {
+          // Update existing message with files
+          return prev.map((msg) =>
+            msg.id === storedUserMessage.id
+              ? { ...msg, files: uploadedFiles }
+              : msg
+          )
+        }
+        // Add new message
+        return [...prev, { ...storedUserMessage, files: uploadedFiles }]
+      })
     }
 
     const placeholderId = `assistant-${Date.now()}`
@@ -447,9 +469,16 @@ function ChatInterface({
 
       if (!storedAssistant) {
         console.warn("⚠️ Failed to persist assistant message, but continuing with display");
+      } else {
+        // Track this message to prevent duplicate from real-time
+        recentlyPersistedMessages.current.add(storedAssistant.id)
+        setTimeout(() => {
+          recentlyPersistedMessages.current.delete(storedAssistant.id)
+        }, 3000)
       }
 
       // Update placeholder dengan message yang tersimpan atau buat temporary
+      // Real-time subscription akan handle update jika message sudah di-save
       const finalMessage = storedAssistant || {
         id: `temp-${Date.now()}`,
         session_id: sessionId,
@@ -458,18 +487,37 @@ function ChatInterface({
         created_at: new Date().toISOString(),
       }
 
-      setMessages((prev) =>
-        prev.map((msg) =>
+      // Update placeholder - check if real-time already added the message
+      setMessages((prev) => {
+        // Check if message already exists from real-time subscription
+        const existingMessage = prev.find((msg) => msg.id === finalMessage.id)
+        if (existingMessage && !existingMessage.isPlaceholder) {
+          // Real-time already added it, just update content for typing effect
+          return prev.map((msg) =>
+            msg.id === finalMessage.id ? { ...msg, content: "" } : msg
+          )
+        }
+        // Replace placeholder with final message
+        return prev.map((msg) =>
           msg.id === placeholderId ? { ...finalMessage, content: "" } : msg
         )
-      )
+      })
 
       await typeWriterEffect(aiResponseText, (partial) => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === finalMessage.id ? { ...msg, content: partial } : msg
+        setMessages((prev) => {
+          // Find message by ID (could be finalMessage.id or placeholderId if not replaced yet)
+          const messageToUpdate = prev.find(
+            (msg) => msg.id === finalMessage.id || (msg.id === placeholderId && !prev.some((m) => m.id === finalMessage.id))
           )
-        )
+          
+          if (!messageToUpdate) return prev
+          
+          const targetId = messageToUpdate.id === placeholderId ? placeholderId : finalMessage.id
+          
+          return prev.map((msg) =>
+            msg.id === targetId ? { ...msg, content: partial } : msg
+          )
+        })
       })
     } catch (error) {
       console.error("❌ handleSend error:", error);
@@ -896,8 +944,59 @@ function ChatInterface({
   const handleRealtimeInsert = useCallback(
     (message: ChatMessage) => {
       if (!message || message.session_id !== activeSessionId) return
+      
+      // Skip if this message was recently persisted (already in state)
+      if (recentlyPersistedMessages.current.has(message.id)) {
+        console.log("⏭️ Skipping real-time insert for recently persisted message:", message.id)
+        return
+      }
+      
       setMessages((prev) => {
-        if (prev.some((item) => item.id === message.id)) return prev
+        // More robust deduplication - check by ID first
+        const existingIndex = prev.findIndex((item) => item.id === message.id)
+        
+        if (existingIndex >= 0) {
+          // Message already exists - update it instead of adding duplicate
+          // This handles case where optimistic update was added first
+          const updated = [...prev]
+          updated[existingIndex] = {
+            ...message,
+            // Preserve files if they exist
+            files: prev[existingIndex].files || undefined,
+          }
+          return updated
+        }
+        
+        // Check for placeholder messages that should be replaced
+        const placeholderIndex = prev.findIndex(
+          (item) =>
+            item.isPlaceholder &&
+            item.role === message.role &&
+            item.session_id === message.session_id
+        )
+        
+        if (placeholderIndex >= 0 && message.role === "assistant") {
+          // Replace placeholder with real message
+          const updated = [...prev]
+          updated[placeholderIndex] = message
+          return updated
+        }
+        
+        // Additional check: prevent duplicate by content + session + role (for race conditions)
+        const duplicateByContent = prev.find(
+          (item) =>
+            item.content === message.content &&
+            item.session_id === message.session_id &&
+            item.role === message.role &&
+            Math.abs(new Date(item.created_at || 0).getTime() - new Date(message.created_at || 0).getTime()) < 5000 // Within 5 seconds
+        )
+        
+        if (duplicateByContent) {
+          console.log("⏭️ Skipping duplicate message by content:", message.id)
+          return prev
+        }
+        
+        // New message - add it
         return [...prev, message]
       })
     },
