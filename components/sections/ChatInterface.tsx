@@ -72,6 +72,7 @@ function ChatInterface({
   const [isLoadingSessions, setIsLoadingSessions] = useState(false)
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [uploadingFiles, setUploadingFiles] = useState(false)
+  const imageUrlsRef = useRef<Map<number, string>>(new Map())
   const [isSessionListOpen, setIsSessionListOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
@@ -370,6 +371,16 @@ function ChatInterface({
     if (attachedFiles.length > 0) {
       try {
         uploadedFiles = await uploadFiles(sessionId, null)
+        // Cleanup object URLs before clearing files
+        attachedFiles.forEach((file, idx) => {
+          if (file.type.startsWith("image/")) {
+            const url = imageUrlsRef.current.get(idx)
+            if (url) {
+              URL.revokeObjectURL(url)
+              imageUrlsRef.current.delete(idx)
+            }
+          }
+        })
         setAttachedFiles([]) // Clear attached files after upload
       } catch (error) {
         console.error("Failed to upload files:", error)
@@ -377,11 +388,9 @@ function ChatInterface({
       }
     }
 
-    // Create message content with file references
-    const fileReferences = uploadedFiles.length > 0
-      ? `\n\n[File terlampir: ${uploadedFiles.map((f) => f.file_name).join(", ")}]`
-      : ""
-    const messageContent = trimmed + fileReferences
+    // Don't add file references to message content - files are shown as preview
+    // Only include text message content
+    const messageContent = trimmed
 
     const storedUserMessage = await persistMessage({
       sessionId,
@@ -838,27 +847,62 @@ function ChatInterface({
         {/* File attachments */}
         {files.length > 0 && (
           <div className={cn("flex flex-wrap gap-2 max-w-[72%]")}>
-            {files.map((file) => (
-              <a
-                key={file.id}
-                href={file.storage_url || "#"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition",
-                  isUser
-                    ? "bg-white/10 text-white border-white/20 hover:bg-white/20"
-                    : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50"
-                )}
-              >
-                {file.file_type.startsWith("image/") ? (
-                  <ImageIcon className="h-4 w-4" />
-                ) : (
+            {files.map((file) => {
+              const isImage = file.file_type.startsWith("image/")
+              const imageUrl = file.storage_url
+
+              // Render image preview
+              if (isImage && imageUrl) {
+                return (
+                  <div
+                    key={file.id}
+                    className={cn(
+                      "relative rounded-lg overflow-hidden border",
+                      isUser
+                        ? "border-white/20"
+                        : "border-gray-200"
+                    )}
+                  >
+                    <a
+                      href={imageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={cn("block")}
+                    >
+                      <img
+                        src={imageUrl}
+                        alt={file.file_name}
+                        className={cn(
+                          "max-w-full h-auto",
+                          "max-h-[300px] object-contain",
+                          "hover:opacity-90 transition-opacity cursor-pointer"
+                        )}
+                        loading="lazy"
+                      />
+                    </a>
+                  </div>
+                )
+              }
+
+              // Render non-image files as before
+              return (
+                <a
+                  key={file.id}
+                  href={file.storage_url || "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition",
+                    isUser
+                      ? "bg-white/10 text-white border-white/20 hover:bg-white/20"
+                      : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50"
+                  )}
+                >
                   <File className="h-4 w-4" />
-                )}
-                <span className="truncate max-w-[200px]">{file.file_name}</span>
-              </a>
-            ))}
+                  <span className="truncate max-w-[200px]">{file.file_name}</span>
+                </a>
+              )
+            })}
           </div>
         )}
 
@@ -872,7 +916,11 @@ function ChatInterface({
             )}
           >
             <p className={cn("text-sm leading-relaxed whitespace-pre-wrap")}>
-              {message.content || (message.isPlaceholder ? "⋯" : "")}
+              {message.content
+                ? message.content.replace(/\n\n\[File terlampir:.*?\]/g, "").trim() || ""
+                : message.isPlaceholder
+                ? "⋯"
+                : ""}
             </p>
             {/* Action buttons - show on hover */}
             {!message.isPlaceholder && (
@@ -1372,28 +1420,71 @@ function ChatInterface({
           {/* Attached files preview */}
           {attachedFiles.length > 0 && (
             <div className={cn("mb-3 flex flex-wrap gap-2")}>
-              {attachedFiles.map((file, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-gray-100 border border-gray-200"
-                  )}
-                >
-                  {file.type.startsWith("image/") ? (
-                    <ImageIcon className="h-4 w-4 text-gray-600" />
-                  ) : (
-                    <File className="h-4 w-4 text-gray-600" />
-                  )}
-                  <span className="text-gray-700 truncate max-w-[150px]">{file.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveFile(index)}
-                    className={cn("text-gray-400 hover:text-gray-600")}
+              {attachedFiles.map((file, index) => {
+                const isImage = file.type.startsWith("image/")
+                // Get or create object URL for image files
+                if (isImage && !imageUrlsRef.current.has(index)) {
+                  imageUrlsRef.current.set(index, URL.createObjectURL(file))
+                }
+                const imageUrl = isImage ? imageUrlsRef.current.get(index) || null : null
+
+                // Show image preview for image files
+                if (isImage && imageUrl) {
+                  return (
+                    <div
+                      key={index}
+                      className={cn(
+                        "relative rounded-lg overflow-hidden border border-gray-200 bg-gray-50"
+                      )}
+                    >
+                      <img
+                        src={imageUrl}
+                        alt={file.name}
+                        className={cn(
+                          "max-h-[200px] max-w-[300px] object-contain",
+                          "hover:opacity-90 transition-opacity"
+                        )}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Cleanup object URL
+                          URL.revokeObjectURL(imageUrl)
+                          imageUrlsRef.current.delete(index)
+                          handleRemoveFile(index)
+                        }}
+                        className={cn(
+                          "absolute top-1 right-1 p-1 rounded-full bg-black/50 hover:bg-black/70",
+                          "text-white transition-colors"
+                        )}
+                        aria-label="Remove file"
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )
+                }
+
+                // Show file info for non-image files
+                return (
+                  <div
+                    key={index}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-gray-100 border border-gray-200"
+                    )}
                   >
-                    <XCircle className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
+                    <File className="h-4 w-4 text-gray-600" />
+                    <span className="text-gray-700 truncate max-w-[150px]">{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFile(index)}
+                      className={cn("text-gray-400 hover:text-gray-600")}
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           )}
 
