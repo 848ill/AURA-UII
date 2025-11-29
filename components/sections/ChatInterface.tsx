@@ -366,11 +366,27 @@ function ChatInterface({
       await fetchSessions()
     }
 
-    // Upload files first
+    // Don't add file references to message content - files are shown as preview
+    // Only include text message content
+    const messageContent = trimmed
+
+    // Save message first to get message_id
+    const storedUserMessage = await persistMessage({
+      sessionId,
+      role: "user",
+      content: messageContent,
+    })
+
+    if (!storedUserMessage) {
+      setSessionError("Gagal menyimpan pesan. Coba lagi.")
+      return
+    }
+
+    // Upload files after message is saved, so we can attach them to the message
     let uploadedFiles: ChatFile[] = []
     if (attachedFiles.length > 0) {
       try {
-        uploadedFiles = await uploadFiles(sessionId, null)
+        uploadedFiles = await uploadFiles(sessionId, storedUserMessage.id)
         // Cleanup object URLs before clearing files
         attachedFiles.forEach((file, idx) => {
           if (file.type.startsWith("image/")) {
@@ -384,19 +400,9 @@ function ChatInterface({
         setAttachedFiles([]) // Clear attached files after upload
       } catch (error) {
         console.error("Failed to upload files:", error)
-        return
+        // Continue even if file upload fails - message is already saved
       }
     }
-
-    // Don't add file references to message content - files are shown as preview
-    // Only include text message content
-    const messageContent = trimmed
-
-    const storedUserMessage = await persistMessage({
-      sessionId,
-      role: "user",
-      content: messageContent,
-    })
 
     // Add message optimistically - real-time will update if needed
     // Track this message ID to prevent duplicate from real-time
@@ -846,7 +852,7 @@ function ChatInterface({
       >
         {/* File attachments */}
         {files.length > 0 && (
-          <div className={cn("flex flex-wrap gap-2 max-w-[72%]")}>
+          <div className={cn("flex flex-wrap gap-2", "max-w-full sm:max-w-[72%]")}>
             {files.map((file) => {
               const isImage = file.file_type.startsWith("image/")
               const imageUrl = file.storage_url
@@ -857,9 +863,9 @@ function ChatInterface({
                   <div
                     key={file.id}
                     className={cn(
-                      "relative rounded-lg overflow-hidden border",
+                      "relative rounded-lg overflow-hidden border bg-gray-50",
                       isUser
-                        ? "border-white/20"
+                        ? "border-white/20 bg-black/10"
                         : "border-gray-200"
                     )}
                   >
@@ -867,17 +873,22 @@ function ChatInterface({
                       href={imageUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={cn("block")}
+                      className={cn("block w-full")}
                     >
                       <img
                         src={imageUrl}
                         alt={file.file_name}
                         className={cn(
-                          "max-w-full h-auto",
-                          "max-h-[300px] object-contain",
+                          "w-full h-auto",
+                          "max-h-[400px] sm:max-h-[500px] object-contain",
                           "hover:opacity-90 transition-opacity cursor-pointer"
                         )}
                         loading="lazy"
+                        onError={(e) => {
+                          // Fallback jika gambar gagal load
+                          console.error("Failed to load image:", imageUrl)
+                          e.currentTarget.style.display = "none"
+                        }}
                       />
                     </a>
                   </div>

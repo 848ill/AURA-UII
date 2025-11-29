@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getSessionMessages, insertChatMessage } from "@/lib/supabase"
+import { getSessionMessages, insertChatMessage, getSessionFiles } from "@/lib/supabase"
 import { validateSessionOwnership } from "@/lib/session-ownership"
 
 interface RouteParams {
@@ -26,7 +26,18 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
 
     const messages = await getSessionMessages(params.sessionId)
-    return NextResponse.json({ messages })
+    const files = await getSessionFiles(params.sessionId)
+    
+    // Attach files to messages based on message_id
+    const messagesWithFiles = messages.map((message) => {
+      const messageFiles = files.filter((file) => file.message_id === message.id)
+      return {
+        ...message,
+        files: messageFiles.length > 0 ? messageFiles : undefined,
+      }
+    })
+    
+    return NextResponse.json({ messages: messagesWithFiles })
   } catch (error) {
     console.error(`GET messages for session ${params.sessionId} failed:`, error)
     return NextResponse.json(
