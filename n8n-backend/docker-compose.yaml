@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      # ⚠️ CATATAN: N8N_USER_EMAIL & N8N_USER_PASSWORD hanya bekerja saat FIRST RUN
+      # Jika database sudah ada user, env vars ini diabaikan
+      # Untuk reset: hapus volume postgres_data dan restart
+      - N8N_USER_EMAIL=dkrdmfvuvfvkmtedvd@nesopf.com
+      - N8N_USER_PASSWORD=siberaksi8888 
+      
+      # 🔓 WEBHOOK TIDAK PERLU AUTH - Disable basic auth untuk webhook
+      # Webhook harus bisa diakses tanpa login untuk komunikasi dengan Next.js
+      - N8N_BASIC_AUTH_ACTIVE=false
+      
+      # 🌐 WEBHOOK & TIMEZONE
+      - GENERIC_TIMEZONE=Asia/Jakarta
+      - N8N_PROTOCOL=https 
+      - WEBHOOK_URL=https://carl-unnoisy-matha.ngrok-free.dev 
+      
+      # ⚙️ PRODUCTION SETTINGS
+      - NODE_ENV=production
+      - EXECUTIONS_PROCESS=main
+      
+      # 🗄️ POSTGRES DB CONFIG
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n_db
+      - DB_POSTGRESDB_USER=n8nuser
+      - DB_POSTGRESDB_PASSWORD=n8nsiber
+      
+      # 🔧 TAMBAHAN: Pastikan webhook bisa diakses public
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      - POSTGRES_USER=n8nuser
+      - POSTGRES_PASSWORD=n8nsiber
+      - POSTGRES_DB=n8n_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  n8n_data:
+  postgres_data:

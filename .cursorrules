@@ -1,0 +1,36 @@
+# 🤖 MEGA PROMPT: PROYEK N8N MASK (FULL BUILD)
+
+### 0. INTRUKSI MANUAL AWAL (USER WAJIB IKUTI)
+* **Buat Struktur Folder:** Jalankan di terminal: `mkdir -p app/api/n8n app/\(main\) components/ui components/layout components/sections lib hooks public/logos`
+* **Instalasi Dependencies:** Jalankan: `npm install clsx tailwind-merge lucide-react @supabase/supabase-js`
+* **Shadcn:** Jalankan: `npx shadcn-ui@latest add button card input table`
+* **Tambahkan Environment Variable ke `.env.local` (Wajib):** `SUPABASE_URL`, `SUPABASE_ANON_KEY`, dan `N8N_WEBHOOK_BASE_URL` harus diisi.
+
+### 1. STANDARDS & FONDASI (CODE GENERATION)
+
+* **Goals:** Bangun aplikasi Next.js 14 App Router. Aesthetic Light Mode, Font Inter.
+* **Wajib:** Terapkan **TypeScript**, **Server Component First**, dan helper **`cn`** (dari `lib/utils.ts`) untuk semua *styling*.
+* **File Generation:** Generate dan isi file `lib/utils.ts`, `app/globals.css`, `app/layout.tsx`, dan `components/layout/Header.tsx` sesuai spesifikasi *Light Mode* dan *Header* minimalis.
+
+### 2. UI IMPLEMENTATION (CODE GENERATION)
+
+Semua komponen harus berupa **Server Component** kecuali ditentukan lain (misalnya, jika ada interaksi tombol).
+
+| Komponen | Lokasi | Fokus & Library |
+| :--- | :--- | :--- |
+| **HeroSection** | `components/sections/HeroSection.tsx` | Headline besar ("Simplified Operations..."), CTA Button Hitam Solid. |
+| **MarqueeLogo** | `components/sections/MarqueeLogo.tsx` | Implementasi *scrolling* logo Grayscale (simulasi Magic UI/CSS Animation). |
+| **FeatureGrid** | `components/sections/FeatureGrid.tsx` | Layout 3-kolom untuk fitur (gunakan `shadcn/ui Card`). |
+| **LogDashboard** | `components/sections/LogDashboard.tsx` | Kerangka `shadcn/ui Table` dan *summary card* untuk menampilkan Log Aktivitas. |
+| **Main Page** | `app/(main)/page.tsx` | Gabungkan semua section di atas secara berurutan. |
+
+### 3. INTEGRASI LOGIC (CODE GENERATION)
+
+* **Supabase Client:** Buat `lib/supabase.ts`. Inisialisasi *Supabase Client* di sisi Server menggunakan ENV. Buat fungsi `getLatestLogs()` untuk membaca data dari tabel `activity_logs`.
+* **API Route Proxy:** Buat `app/api/n8n/trigger.ts` (POST). Endpoint ini harus mengambil `N8N_WEBHOOK_BASE_URL` dari ENV dan melakukan `fetch` request ke URL Ngrok + path webhook n8n.
+* **Custom Hook:** Buat `hooks/useN8nTrigger.ts`. Hook ini memanggil API Proxy (`/api/n8n/trigger`).
+* **Binding:** Hubungkan `LogDashboard.tsx` dengan `getLatestLogs()` dan tombol "Get Started" di `HeroSection.tsx` dengan *hook* `useN8nTrigger`.
+
+### 4. DEPLOYMENT FINAL
+
+* **Instruksi:** Selesaikan integrasi logic (TAHAP 3), kemudian persiapkan *deployment* ke Vercel. Frontend siap, namun *deployment* n8n ke VPS/PaaS harus dilakukan manual setelah testing Ngrok selesai.
