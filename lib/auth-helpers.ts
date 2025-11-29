@@ -94,7 +94,6 @@ export async function getUserIdFromRequest(
   if (authHeader) {
     const token = authHeader.replace("Bearer ", "")
     try {
-      const { data: { user } } = await getServerSupabaseClient()
       const { supabase } = await getServerSupabaseClient()
       const { data } = await supabase.auth.getUser(token)
       return data.user?.id ?? null
